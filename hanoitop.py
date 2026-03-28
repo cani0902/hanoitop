@@ -1,8 +1,6 @@
 import streamlit as st
 from collections import deque
-import heapq
-import networkx as nx
-import matplotlib.pyplot as plt
+from graphviz import Digraph
 
 # -----------------------------
 # 상태 정의
@@ -14,10 +12,15 @@ def goal_state(n):
     return ((), (), tuple(range(n, 0, -1)))
 
 # -----------------------------
-# 상태 문자열 (노드 라벨용)
+# 상태 표시 (3줄 형태)
 # -----------------------------
 def state_to_str(state):
-    return f"A{state[0]}\nB{state[1]}\nC{state[2]}"
+    def pad(t):
+        return list(t) + [" "] * (3 - len(t))
+
+    A, B, C = map(pad, state)
+
+    return f"{A[::-1]}\n{B[::-1]}\n{C[::-1]}"
 
 # -----------------------------
 # 이동 생성
@@ -43,145 +46,65 @@ def get_neighbors(state):
     return neighbors
 
 # -----------------------------
-# 휴리스틱
+# BFS 트리 생성 (레벨 포함)
 # -----------------------------
-def heuristic(state, goal):
-    return len(goal[2]) - len(state[2])
-
-# -----------------------------
-# BFS (트리 생성 포함)
-# -----------------------------
-def bfs_tree(start, goal):
-    queue = deque([start])
+def build_tree(start, max_depth=5):
+    queue = deque([(start, 0)])
     visited = set()
-    parent = {}
-    G = nx.DiGraph()
+    edges = []
+    levels = {}
 
     while queue:
-        state = queue.popleft()
+        state, depth = queue.popleft()
 
-        if state in visited:
+        if state in visited or depth > max_depth:
             continue
         visited.add(state)
 
-        for next_state in get_neighbors(state):
-            G.add_edge(state_to_str(state), state_to_str(next_state))
-
-            if next_state not in visited:
-                parent[next_state] = state
-                queue.append(next_state)
-
-    return G
-
-# -----------------------------
-# DFS
-# -----------------------------
-def dfs_tree(start, goal):
-    stack = [start]
-    visited = set()
-    G = nx.DiGraph()
-
-    while stack:
-        state = stack.pop()
-
-        if state in visited:
-            continue
-        visited.add(state)
+        levels[state] = depth
 
         for next_state in get_neighbors(state):
-            G.add_edge(state_to_str(state), state_to_str(next_state))
+            edges.append((state, next_state))
+            queue.append((next_state, depth + 1))
 
-            if next_state not in visited:
-                stack.append(next_state)
-
-    return G
+    return edges, levels
 
 # -----------------------------
-# Greedy
+# Graphviz 트리 생성
 # -----------------------------
-def greedy_tree(start, goal):
-    heap = [(heuristic(start, goal), start)]
-    visited = set()
-    G = nx.DiGraph()
+def draw_tree(edges, levels):
+    dot = Digraph()
+    dot.attr(rankdir="TB")  # Top -> Bottom
 
-    while heap:
-        _, state = heapq.heappop(heap)
+    # 노드 추가
+    for state, depth in levels.items():
+        dot.node(
+            str(state),
+            label=state_to_str(state),
+            shape="box"
+        )
 
-        if state in visited:
-            continue
-        visited.add(state)
+    # 간선 추가
+    for parent, child in edges:
+        if parent in levels and child in levels:
+            dot.edge(str(parent), str(child))
 
-        for next_state in get_neighbors(state):
-            G.add_edge(state_to_str(state), state_to_str(next_state))
-            heapq.heappush(heap, (heuristic(next_state, goal), next_state))
-
-    return G
-
-# -----------------------------
-# A*
-# -----------------------------
-def astar_tree(start, goal):
-    heap = [(0 + heuristic(start, goal), 0, start)]
-    visited = set()
-    G = nx.DiGraph()
-
-    while heap:
-        f, g, state = heapq.heappop(heap)
-
-        if state in visited:
-            continue
-        visited.add(state)
-
-        for next_state in get_neighbors(state):
-            G.add_edge(state_to_str(state), state_to_str(next_state))
-            heapq.heappush(heap, (g+1 + heuristic(next_state, goal), g+1, next_state))
-
-    return G
-
-# -----------------------------
-# 그래프 그리기
-# -----------------------------
-def draw_graph(G):
-    plt.figure(figsize=(10, 7))
-
-    pos = nx.spring_layout(G, seed=42)  # 자동 배치
-
-    nx.draw(
-        G, pos,
-        with_labels=True,
-        node_size=2000,
-        node_color="lightblue",
-        font_size=8,
-        arrows=True
-    )
-
-    st.pyplot(plt)
+    return dot
 
 # -----------------------------
 # UI
 # -----------------------------
-st.title("🧩 하노이의 탑 상태 공간 트리")
+st.title("🧩 하노이의 탑 트리 (계층형)")
 
 n = st.slider("원판 개수", 2, 4, 3)
-
-algo = st.selectbox(
-    "알고리즘 선택",
-    ["BFS", "DFS", "Greedy", "A*"]
-)
+depth = st.slider("트리 깊이 제한", 1, 6, 4)
 
 start = initial_state(n)
-goal = goal_state(n)
 
 if st.button("트리 생성"):
-    if algo == "BFS":
-        G = bfs_tree(start, goal)
-    elif algo == "DFS":
-        G = dfs_tree(start, goal)
-    elif algo == "Greedy":
-        G = greedy_tree(start, goal)
-    elif algo == "A*":
-        G = astar_tree(start, goal)
+    edges, levels = build_tree(start, depth)
 
-    st.write(f"노드 수: {len(G.nodes)} / 간선 수: {len(G.edges)}")
+    st.write(f"노드 수: {len(levels)} / 간선 수: {len(edges)}")
 
-    draw_graph(G)[2])
+    dot = draw_tree(edges, levels)
+    st.graphviz_chart(dot)
