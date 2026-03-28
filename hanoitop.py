@@ -1,9 +1,11 @@
 import streamlit as st
 from collections import deque
 import heapq
+import networkx as nx
+import matplotlib.pyplot as plt
 
 # -----------------------------
-# 상태 표현
+# 상태 정의
 # -----------------------------
 def initial_state(n):
     return (tuple(range(n, 0, -1)), (), ())
@@ -12,7 +14,13 @@ def goal_state(n):
     return ((), (), tuple(range(n, 0, -1)))
 
 # -----------------------------
-# 가능한 이동 생성
+# 상태 문자열 (노드 라벨용)
+# -----------------------------
+def state_to_str(state):
+    return f"A{state[0]}\nB{state[1]}\nC{state[2]}"
+
+# -----------------------------
+# 이동 생성
 # -----------------------------
 def get_neighbors(state):
     neighbors = []
@@ -35,108 +43,126 @@ def get_neighbors(state):
     return neighbors
 
 # -----------------------------
-# 휴리스틱 (남은 원판 수)
+# 휴리스틱
 # -----------------------------
 def heuristic(state, goal):
     return len(goal[2]) - len(state[2])
 
 # -----------------------------
-# BFS
+# BFS (트리 생성 포함)
 # -----------------------------
-def bfs(start, goal):
-    queue = deque([(start, [])])
+def bfs_tree(start, goal):
+    queue = deque([start])
     visited = set()
+    parent = {}
+    G = nx.DiGraph()
 
     while queue:
-        state, path = queue.popleft()
+        state = queue.popleft()
 
         if state in visited:
             continue
         visited.add(state)
 
-        if state == goal:
-            return path + [state]
-
         for next_state in get_neighbors(state):
-            queue.append((next_state, path + [state]))
+            G.add_edge(state_to_str(state), state_to_str(next_state))
 
-    return None
+            if next_state not in visited:
+                parent[next_state] = state
+                queue.append(next_state)
+
+    return G
 
 # -----------------------------
 # DFS
 # -----------------------------
-def dfs(start, goal):
-    stack = [(start, [])]
+def dfs_tree(start, goal):
+    stack = [start]
     visited = set()
+    G = nx.DiGraph()
 
     while stack:
-        state, path = stack.pop()
+        state = stack.pop()
 
         if state in visited:
             continue
         visited.add(state)
 
-        if state == goal:
-            return path + [state]
-
         for next_state in get_neighbors(state):
-            stack.append((next_state, path + [state]))
+            G.add_edge(state_to_str(state), state_to_str(next_state))
 
-    return None
+            if next_state not in visited:
+                stack.append(next_state)
+
+    return G
 
 # -----------------------------
-# Greedy Best First Search
+# Greedy
 # -----------------------------
-def greedy(start, goal):
-    heap = [(heuristic(start, goal), start, [])]
+def greedy_tree(start, goal):
+    heap = [(heuristic(start, goal), start)]
     visited = set()
+    G = nx.DiGraph()
 
     while heap:
-        _, state, path = heapq.heappop(heap)
+        _, state = heapq.heappop(heap)
 
         if state in visited:
             continue
         visited.add(state)
 
-        if state == goal:
-            return path + [state]
-
         for next_state in get_neighbors(state):
-            h = heuristic(next_state, goal)
-            heapq.heappush(heap, (h, next_state, path + [state]))
+            G.add_edge(state_to_str(state), state_to_str(next_state))
+            heapq.heappush(heap, (heuristic(next_state, goal), next_state))
 
-    return None
+    return G
 
 # -----------------------------
-# A* Search
+# A*
 # -----------------------------
-def astar(start, goal):
-    heap = [(0 + heuristic(start, goal), 0, start, [])]
+def astar_tree(start, goal):
+    heap = [(0 + heuristic(start, goal), 0, start)]
     visited = set()
+    G = nx.DiGraph()
 
     while heap:
-        f, g, state, path = heapq.heappop(heap)
+        f, g, state = heapq.heappop(heap)
 
         if state in visited:
             continue
         visited.add(state)
 
-        if state == goal:
-            return path + [state]
-
         for next_state in get_neighbors(state):
-            new_g = g + 1
-            h = heuristic(next_state, goal)
-            heapq.heappush(heap, (new_g + h, new_g, next_state, path + [state]))
+            G.add_edge(state_to_str(state), state_to_str(next_state))
+            heapq.heappush(heap, (g+1 + heuristic(next_state, goal), g+1, next_state))
 
-    return None
+    return G
+
+# -----------------------------
+# 그래프 그리기
+# -----------------------------
+def draw_graph(G):
+    plt.figure(figsize=(10, 7))
+
+    pos = nx.spring_layout(G, seed=42)  # 자동 배치
+
+    nx.draw(
+        G, pos,
+        with_labels=True,
+        node_size=2000,
+        node_color="lightblue",
+        font_size=8,
+        arrows=True
+    )
+
+    st.pyplot(plt)
 
 # -----------------------------
 # UI
 # -----------------------------
-st.title("🧩 하노이의 탑 탐색 알고리즘 시각화")
+st.title("🧩 하노이의 탑 상태 공간 트리")
 
-n = st.slider("원판 개수", 2, 5, 3)
+n = st.slider("원판 개수", 2, 4, 3)
 
 algo = st.selectbox(
     "알고리즘 선택",
@@ -146,28 +172,16 @@ algo = st.selectbox(
 start = initial_state(n)
 goal = goal_state(n)
 
-if st.button("실행"):
+if st.button("트리 생성"):
     if algo == "BFS":
-        result = bfs(start, goal)
+        G = bfs_tree(start, goal)
     elif algo == "DFS":
-        result = dfs(start, goal)
+        G = dfs_tree(start, goal)
     elif algo == "Greedy":
-        result = greedy(start, goal)
+        G = greedy_tree(start, goal)
     elif algo == "A*":
-        result = astar(start, goal)
+        G = astar_tree(start, goal)
 
-    if result:
-        st.success(f"해결 완료! 단계 수: {len(result)-1}")
+    st.write(f"노드 수: {len(G.nodes)} / 간선 수: {len(G.edges)}")
 
-        for i, step in enumerate(result):
-            st.write(f"Step {i}: {step}")
-    else:
-        st.error("해결 실패")
-
-# -----------------------------
-# 상태 시각화 함수
-# -----------------------------
-def draw_state(state):
-    st.write("A:", state[0])
-    st.write("B:", state[1])
-    st.write("C:", state[2])
+    draw_graph(G)[2])
