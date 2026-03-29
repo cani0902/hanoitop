@@ -16,18 +16,18 @@ def make_move(state, from_p, to_p):
     return tuple(tuple(p) for p in new_state)
 
 def get_h(state, goal):
+    # 휴리스틱: 목표 기둥(C)에 있지 않은 원반의 개수
     return sum(len(p) for p in state) - len(state[2])
 
 def state_to_label(state):
-    return f"{list(state[0])}\n{list(state[1])}\n{list(state[2])}"
+    # 요청하신 A: [], B: [], C: [] 형식으로 변환
+    return f"A: {list(state[0])}<br>B: {list(state[1])}<br>C: {list(state[2])}"
 
-# --- 2. 4대 알고리즘 탐색 엔진 (계층 데이터 포함) ---
+# --- 2. 4대 알고리즘 탐색 엔진 ---
 def run_full_search(start, goal, algo_type):
-    # 트리 렌더링을 위해 노드를 저장할 순서가 중요함
     all_nodes = [] 
     visited = {start}
     
-    # [상태, 부모ID, 깊이, 가중치]
     if algo_type == "너비 우선 탐색 (BFS)":
         container = collections.deque([(start, -1, 0)])
     elif algo_type == "깊이 우선 탐색 (DFS)":
@@ -38,8 +38,8 @@ def run_full_search(start, goal, algo_type):
         container = [(get_h(start, goal), 0, start, -1, 0)]
 
     count = 0
-    while container:
-        # 알고리즘별 추출 방식 (FIFO vs LIFO vs Priority)
+    # 무한 루프 방지 및 메모리 보호를 위한 안전 장치 (최대 500노드)
+    while container and count < 500:
         if algo_type == "너비 우선 탐색 (BFS)":
             curr, parent, d = container.popleft()
         elif algo_type == "깊이 우선 탐색 (DFS)":
@@ -73,88 +73,69 @@ def run_full_search(start, goal, algo_type):
                             
     return all_nodes
 
-# --- 3. UI 레이아웃 및 심화 트리 렌더링 (N-Puzzle 스타일) ---
-st.set_page_config(page_title="Hanoi Lab: True Tree", layout="wide")
+# --- 3. UI 레이아웃 및 트리 렌더링 ---
+st.set_page_config(page_title="KISH Hanoi Lab", layout="wide")
 
 st.markdown("""
     <style>
-    /* 트리를 감싸는 전체 영역 */
-    .tree-container {
-        display: flex; flex-direction: column; align-items: center;
-        padding: 20px; font-family: sans-serif;
+    .tree-wrapper { display: flex; flex-direction: column; align-items: center; width: 100%; }
+    .level-container { 
+        display: flex; flex-wrap: wrap; justify-content: center; 
+        gap: 20px; width: 100%; margin-bottom: 40px; position: relative;
     }
-    
-    /* 각 층(Depth)의 노드들을 정렬하는 스타일 */
-    .level {
-        display: flex; justify-content: center; width: 100%;
-        margin-bottom: 50px; position: relative;
-    }
-    
-    /* 개별 노드 카드 디자인 */
     .node-card {
-        background: white; border: 2px solid #5C6BC0; border-radius: 10px;
-        padding: 10px; text-align: center; min-width: 130px;
-        box-shadow: 0 6px 10px rgba(0,0,0,0.1); position: relative; z-index: 2;
+        background: #ffffff; border: 2px solid #5C6BC0; border-radius: 8px;
+        padding: 12px; text-align: left; min-width: 150px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; z-index: 2;
     }
-    .node-id { font-size: 11px; color: #777; border-bottom: 1px solid #eee; padding-bottom: 3px; margin-bottom: 5px; }
-    .node-content { font-size: 14px; font-weight: bold; color: #333; line-height: 1.4; }
-    
-    /* 부모 노드와 연결되는 수직선 */
-    .line-to-parent {
-        position: absolute; top: -50px; left: 50%;
-        width: 2px; height: 50px; background-color: #A0A0A0; z-index: 1;
+    .node-header { font-size: 10px; color: #888; margin-bottom: 5px; border-bottom: 1px solid #eee; }
+    .node-body { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 600; color: #222; }
+    .goal-node { border-color: #27ae60; background-color: #f0fff4; }
+    .line-indicator {
+        position: absolute; top: -20px; left: 50%; width: 2px; height: 20px;
+        background-color: #cbd5e0; z-index: 1;
     }
-    
-    /* 목표 노드 강조 */
-    .goal-node { border-color: #4CAF50; background-color: #E8F5E9; }
     </style>
 """, unsafe_allow_html=True)
 
-# 사이드바 (원반 4개 고정)
 with st.sidebar:
     st.title("🛡️ 탐색 전략")
-    algo = st.radio("알고리즘을 고르세요", 
-                    ["너비 우선 탐색 (BFS)", "깊이 우선 탐색 (DFS)", "최상 우선 탐색 (Best-First)", "A* 알고리즘"])
+    algo = st.radio("알고리즘 선택", ["너비 우선 탐색 (BFS)", "깊이 우선 탐색 (DFS)", "최상 우선 탐색 (Best-First)", "A* 알고리즘"])
     st.write("---")
-    st.write("**조건:** 원반 4개, 기둥 3개")
+    st.write("**조건:** 원반 4개 (A->C)")
 
-# 메인 화면
-st.header(f"🌳 {algo} : 계층형 상태 공간 트리")
-st.write("초기 상태에서 목표 상태를 찾을 때까지 생성된 **모든 노드**를 계층적 트리 구조로 시각화합니다.")
+st.header(f"🌳 {algo} : 상태 공간 트리")
 
-# 고정 설정
 disks = 4
 init = (tuple(range(disks, 0, -1)), (), ())
 goal = ((), (), tuple(range(disks, 0, -1)))
 
-if st.button("▶ 탐색 및 트리 생성 시작"):
-    with st.spinner("목표 상태를 찾을 때까지 트리를 확장 중입니다..."):
-        all_nodes, path_found = run_full_search(init, goal, algo)
-        
-        st.success(f"탐색 완료! 생성된 총 노드 수: **{len(all_nodes)}개**")
-        
-        # 깊이(Depth)별 노드 그룹화
-        depth_map = collections.defaultdict(list)
-        for n in all_nodes:
-            depth_map[n['depth']].append(n)
+if st.button("▶ 탐색 시작"):
+    all_nodes = run_full_search(init, goal, algo)
+    
+    st.success(f"탐색 완료! 총 {len(all_nodes)}개의 노드 생성")
+    
+    # Depth별 그룹화
+    depth_groups = collections.defaultdict(list)
+    for n in all_nodes:
+        depth_groups[n['depth']].append(n)
+
+    # 렌더링 영역
+    st.markdown("<div class='tree-wrapper'>", unsafe_allow_html=True)
+    for d in sorted(depth_groups.keys()):
+        st.write(f"**Depth {d}**")
+        html_content = "<div class='level-container'>"
+        for node in depth_groups[d]:
+            goal_class = "goal-node" if node['state'] == goal else ""
+            line_html = "<div class='line-indicator'></div>" if node['depth'] > 0 else ""
             
-        # 트리 렌더링
-        st.markdown("<div class='tree-container'>", unsafe_allow_html=True)
-        for d in sorted(depth_map.keys()):
-            st.markdown(f"<div class='level'>", unsafe_allow_html=True)
-            cols = st.columns(len(depth_map[d]) + 2) # 중앙 정렬 Trick
-            
-            for idx, node in enumerate(depth_map[d]):
-                with cols[idx+1]:
-                    is_goal = "goal-node" if node['state'] == goal else ""
-                    parent_line = "<div class='line-to-parent'></div>" if node['depth'] > 0 else ""
-                    
-                    st.markdown(f"""
-                        <div class="node-card {is_goal}">
-                            {parent_line}
-                            <div class="node-id">Node {node['id']} (P:{node['parent']})</div>
-                            <div class="node-content">{node['label'].replace('\n', '<br>')}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+            html_content += f"""
+                <div class="node-card {goal_class}">
+                    {line_html}
+                    <div class="node-header">Node {node['id']} (Parent: {node['parent']})</div>
+                    <div class="node-body">{node['label']}</div>
+                </div>
+            """
+        html_content += "</div>"
+        st.markdown(html_content, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
