@@ -1,156 +1,125 @@
 import streamlit as st
-from collections import deque
+import collections
 import heapq
+import time
 
-# -----------------------------
-# 상태 정의
-# -----------------------------
-def initial_state(n):
-    return (tuple(range(n, 0, -1)), (), ())
+# --- 1. 문제의 상태 정의 및 작업 (Action) ---
+def is_valid_move(state, from_p, to_p):
+    if not state[from_p]: return False
+    if not state[to_p]: return True
+    return state[from_p][-1] < state[to_p][-1]
 
-def goal_state(n):
-    return ((), (), tuple(range(n, 0, -1)))
+def make_move(state, from_p, to_p):
+    new_state = [list(p) for p in state]
+    disk = new_state[from_p].pop()
+    new_state[to_p].append(disk)
+    return tuple(tuple(p) for p in new_state)
 
-# -----------------------------
-# 퍼즐 스타일 출력
-# -----------------------------
-def state_to_pretty(state, n):
-    pegs = [list(p) for p in state]
+def get_h(state, goal):
+    # 휴리스틱: 목표 기둥(C)에 있지 않은 원반의 개수
+    return sum(len(p) for p in state) - len(state[2])
+
+def state_to_str(state):
+    return f"A{list(state[0])} | B{list(state[1])} | C{list(state[2])}"
+
+# --- 2. 탐색 전략 알고리즘 (자료구조 적용) ---
+def run_search(start, goal, algo_type, max_nodes=15):
+    nodes = [] # 트리 시각화용 데이터
+    visited = {start}
     
-    # 높이 맞추기
-    for p in pegs:
-        while len(p) < n:
-            p.insert(0, " ")
+    # [상태, 부모ID, 깊이, 가중치]
+    if algo_type == "BFS (Queue)":
+        container = collections.deque([(start, -1, 0)])
+    elif algo_type == "DFS (Stack)":
+        container = [(start, -1, 0)]
+    else: # Best-First, A* (Priority Queue)
+        container = []
+        heapq.heappush(container, (get_h(start, goal), 0, start, -1, 0))
 
-    lines = []
-    for i in range(n):
-        lines.append(f"{pegs[0][i]} | {pegs[1][i]} | {pegs[2][i]}")
+    count = 0
+    while container and count < max_nodes:
+        # 자료구조별 추출 방식 (LIFO vs FIFO vs Priority)
+        if algo_type == "BFS (Queue)": 
+            curr, parent, d = container.popleft()
+        elif algo_type == "DFS (Stack)": 
+            curr, parent, d = container.pop()
+        elif algo_type == "Best-First": 
+            _, _, curr, parent, d = heapq.heappop(container)
+        elif algo_type == "A*": 
+            f, g, curr, parent, d = heapq.heappop(container)
 
-    lines.append("A   B   C")
-    return "\\n".join(lines)
+        node_id = count
+        nodes.append({"id": node_id, "label": state_to_str(curr), "parent": parent, "depth": d, "state": curr})
+        if curr == goal: break
+        
+        count += 1
+        for i in range(3):
+            for j in range(3):
+                if i != j and is_valid_move(curr, i, j):
+                    nxt = make_move(curr, i, j)
+                    if nxt not in visited:
+                        visited.add(nxt)
+                        if algo_type == "BFS (Queue)": container.append((nxt, node_id, d+1))
+                        elif algo_type == "DFS (Stack)": container.append((nxt, node_id, d+1))
+                        elif algo_type == "Best-First": heapq.heappush(container, (get_h(nxt, goal), count, nxt, node_id, d+1))
+                        elif algo_type == "A*": 
+                            g_new = d + 1
+                            heapq.heappush(container, (g_new + get_h(nxt, goal), count, nxt, node_id, d+1))
+    return nodes
 
-# -----------------------------
-# 이동 생성
-# -----------------------------
-def get_neighbors(state):
-    neighbors = []
-    pegs = list(state)
+# --- 3. 웹 UI 레이아웃 (교과서 스타일 반영) ---
+st.set_page_config(page_title="KISH Hanoi Lab", layout="wide")
 
-    for i in range(3):
-        if not pegs[i]:
-            continue
+# CSS로 트리 카드 디자인
+st.markdown("""
+    <style>
+    .tree-node {
+        border: 2px solid #4A90E2; border-radius: 10px; padding: 10px;
+        background: white; margin: 10px; min-width: 180px; text-align: center;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    }
+    .goal-node { border-color: #4CAF50; background-color: #E8F5E9; }
+    .node-info { font-size: 11px; color: #666; border-bottom: 1px solid #eee; margin-bottom: 5px; }
+    </style>
+""", unsafe_allow_html=True)
 
-        for j in range(3):
-            if i == j:
-                continue
+st.title("🌲 하노이의 탑 상태 공간 트리 시각화")
+st.info("교과서의 '문제 해결을 위한 탐색 과정'을 시뮬레이션합니다.")
 
-            if not pegs[j] or pegs[i][-1] < pegs[j][-1]:
-                new_pegs = [list(p) for p in pegs]
-                disk = new_pegs[i].pop()
-                new_pegs[j].append(disk)
-                neighbors.append(tuple(tuple(p) for p in new_pegs))
+with st.sidebar:
+    st.header("📋 탐색 전략 설정")
+    algo = st.selectbox("알고리즘(자료구조) 선택", 
+                        ["BFS (Queue)", "DFS (Stack)", "Best-First", "A*"])
+    disks = st.slider("원반 개수", 2, 4, 3)
+    max_view = st.number_input("표시할 최대 노드 수", 5, 30, 12)
 
-    return neighbors
+# 초기/목표 상태 설정
+initial = (tuple(range(disks, 0, -1)), (), ())
+target = ((), (), tuple(range(disks, 0, -1)))
 
-# -----------------------------
-# 휴리스틱
-# -----------------------------
-def heuristic(state, goal):
-    return len(goal[2]) - len(state[2])
+if st.button("▶ 탐색 및 트리 생성 실행"):
+    with st.spinner("상태 공간 트리 구축 중..."):
+        tree_data = run_search(initial, target, algo, max_view)
+        
+        # 깊이(Depth)별 렌더링
+        depths = collections.defaultdict(list)
+        for n in tree_data: depths[n['depth']].append(n)
+        
+        for d in sorted(depths.keys()):
+            cols = st.columns(len(depths[d]) + 2)
+            for idx, node in enumerate(depths[d]):
+                with cols[idx+1]:
+                    is_goal = "goal-node" if node['state'] == target else ""
+                    st.markdown(f"""
+                        <div class="tree-node {is_goal}">
+                            <div class="node-info">ID: {node['id']} | Parent: {node['parent']}</div>
+                            <div style="font-weight: bold;">{node['label']}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+            st.write("---")
+    st.success(f"{algo} 전략으로 탐색 완료!")
 
-# -----------------------------
-# 트리 생성 (목표까지)
-# -----------------------------
-def build_tree(start, goal, algo):
-    visited = set()
-    edges = []
-
-    if algo == "BFS":
-        structure = deque([start])
-        pop = structure.popleft
-        push = structure.append
-
-    elif algo == "DFS":
-        structure = [start]
-        pop = structure.pop
-        push = structure.append
-
-    elif algo == "Greedy":
-        structure = [(heuristic(start, goal), start)]
-        pop = lambda: heapq.heappop(structure)
-        push = lambda x: heapq.heappush(structure, x)
-
-    elif algo == "A*":
-        structure = [(heuristic(start, goal), 0, start)]
-        pop = lambda: heapq.heappop(structure)
-        push = lambda x: heapq.heappush(structure, x)
-
-    while structure:
-        if algo in ["BFS", "DFS"]:
-            state = pop()
-        elif algo == "Greedy":
-            _, state = pop()
-        else:
-            _, g, state = pop()
-
-        if state in visited:
-            continue
-        visited.add(state)
-
-        # 🎯 목표 도달 시 종료
-        if state == goal:
-            break
-
-        for next_state in get_neighbors(state):
-            edges.append((state, next_state))
-
-            if algo in ["BFS", "DFS"]:
-                push(next_state)
-            elif algo == "Greedy":
-                push((heuristic(next_state, goal), next_state))
-            else:
-                push((g + 1 + heuristic(next_state, goal), g + 1, next_state))
-
-    return edges
-
-# -----------------------------
-# Graphviz 생성 (가독성 개선)
-# -----------------------------
-def build_graphviz(edges, n):
-    dot = "digraph G {\n"
-    dot += "rankdir=TB;\n"
-    dot += "node [shape=box, style=filled, fillcolor=lightyellow, fontsize=10];\n"
-    dot += "edge [color=gray];\n"
-
-    for parent, child in edges:
-        p = state_to_pretty(parent, n)
-        c = state_to_pretty(child, n)
-
-        dot += f"\"{p}\" -> \"{c}\";\n"
-
-    dot += "}"
-    return dot
-
-# -----------------------------
-# UI
-# -----------------------------
-st.title("🧩 하노이의 탑 트리 (가독성 개선 버전)")
-
-n = st.slider("원판 개수", 2, 4, 3)
-
-algo = st.radio(
-    "알고리즘 선택",
-    ["BFS", "DFS", "Greedy", "A*"]
-)
-
-start = initial_state(n)
-goal = goal_state(n)
-
-if st.button("트리 생성"):
-    edges = build_tree(start, goal, algo)
-
-    st.write(f"간선 수: {len(edges)}")
-
-    dot = build_graphviz(edges, n)
-
-    st.graphviz_chart(dot)
+st.markdown("### 📝 학습지 작성 가이드")
+st.write(f"- **현재 전략:** {algo}")
+st.write(f"- **데이터 구조:** {'LIFO (Stack)' if 'DFS' in algo else 'FIFO (Queue)' if 'BFS' in algo else 'Priority Queue'}")
+st.write("- **관찰 포인트:** 노드 ID의 생성 순서를 보며 알고리즘이 트리를 '어느 방향'으로 확장하는지 비교하세요.")
