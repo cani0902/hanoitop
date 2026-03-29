@@ -157,4 +157,4 @@ if st.button("▶ 탐색 및 트리 생성 시작"):
                         </div>
                     """, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)True)
+        st.markdown("</div>", unsafe_allow_html=True)
